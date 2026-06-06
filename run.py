@@ -4,13 +4,12 @@ import json
 import logging
 import os
 import sys
-from datetime import date
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 from config import AutoBookConfig, ENV_PATH, ListingFilter, load_config
-from models import Listing, STATUS_AVAILABLE
+from models import Listing
 from notifier_email import ResendEmailNotifier
 from scrapers.holland2stay import HollandStayScraper
 
@@ -33,8 +32,6 @@ def _load_listing_id_set(path: Path) -> set[str]:
 
 def _save_listing_id_set(path: Path, listing_ids: set[str]) -> None:
     path.write_text(json.dumps(sorted(listing_ids), indent=2), encoding="utf-8")
-
-# For bool env vars it always return a string, so we need to parse it to bool. The convention is that "true" (case-insensitive) means True, and anything else means False. If the env var is not set, we return the provided default value.
 def _env_enabled(name: str, default: bool) -> bool:
     raw = os.environ.get(name)
     if raw is None:
@@ -51,25 +48,6 @@ def _listing_sort_key(listing: Listing) -> tuple[str, float]:
     price = listing.price_value
     available_from = listing.available_from or "9999-99-99"
     return (available_from, price if price is not None else float("inf"))
-
-
-def _passes_available_from_range(
-    listing: Listing,
-    min_date: str,
-    max_date: str,
-) -> bool:
-    if not min_date or not max_date:
-        return True
-    value = listing.available_from
-    if not value:
-        return False
-    try:
-        current = date.fromisoformat(value)
-        lower = date.fromisoformat(min_date)
-        upper = date.fromisoformat(max_date)
-    except ValueError:
-        return False
-    return lower <= current <= upper
 
 
 def setup_logging() -> logging.Logger:
@@ -98,6 +76,8 @@ def build_autobook_config() -> AutoBookConfig:
             allowed_types=["Studio"],
             allowed_cities=["Rotterdam"],
             allowed_contract=["Indefinite"],
+            available_from_start=os.environ.get("MONITOR_RANGE_START", "").strip(),
+            available_from_end=os.environ.get("MONITOR_RANGE_END", "").strip(),
         ),
         cancel_enabled=_env_enabled("AUTO_BOOK_CANCEL_ENABLED", False),
         payment_method=os.environ.get("AUTO_BOOK_PAYMENT_METHOD", "idealcheckout_visa").strip() or "idealcheckout_visa",
@@ -110,8 +90,6 @@ def run_once() -> int:
     booked_path = base_dir / "booked_success_listing_ids.json"
     logger = logging.getLogger(__name__)
     email_notifier = ResendEmailNotifier.from_env()
-    monitor_range_start = os.environ.get("MONITOR_RANGE_START", "").strip()
-    monitor_range_end = os.environ.get("MONITOR_RANGE_END", "").strip()
     try:
         cfg = load_config()
         autobook = build_autobook_config()
@@ -136,13 +114,7 @@ def run_once() -> int:
         bookable = [
             listing
             for listing in all_listings
-            if listing.status.lower() == STATUS_AVAILABLE
-            and autobook.listing_filter.passes(listing)
-            and _passes_available_from_range(
-                listing,
-                min_date=monitor_range_start,
-                max_date=monitor_range_end,
-            )
+            if autobook.listing_filter.passes(listing)
         ]
 
         print(f"\nAvailable to book after filter: {len(bookable)}")
@@ -182,8 +154,8 @@ def run_once() -> int:
                 new_filtered_listings,
                 ordered_by="available_from, then price",
                 listing_type="Studio",
-                range_start=monitor_range_start,
-                range_end=monitor_range_end,
+                range_start=autobook.listing_filter.available_from_start,
+                range_end=autobook.listing_filter.available_from_end,
             )
 
         _save_listing_id_set(seen_path, updated_seen_listing_ids)

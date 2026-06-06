@@ -26,6 +26,7 @@ import re
 import sys
 
 from dataclasses import dataclass, field, fields
+from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -497,6 +498,12 @@ class ListingFilter:
     等级排序：A+++ > A++ > A+ > A > B > C > D > E > F...
     """
 
+    available_from_start: str = ""
+    """可接受的最早入住日期（YYYY-MM-DD）。为空表示不限制。"""
+
+    available_from_end: str = ""
+    """可接受的最晚入住日期（YYYY-MM-DD）。为空表示不限制。"""
+
     def is_empty(self) -> bool:
         """所有条件均未设置时返回 True，表示全部放行。"""
         # 通过遍历 dataclass fields 自动判断，新增过滤字段无需手动同步此处
@@ -592,6 +599,19 @@ class ListingFilter:
         if self.allowed_sources:
             source = listing.source or "holland2stay"
             if not any(a.lower() == source.lower() for a in self.allowed_sources):
+                return False
+
+        if self.available_from_start.strip() and self.available_from_end.strip():
+            value = listing.available_from
+            if not value:
+                return False
+            try:
+                current = date.fromisoformat(value)
+                lower = date.fromisoformat(self.available_from_start)
+                upper = date.fromisoformat(self.available_from_end)
+            except ValueError:
+                return False
+            if not (lower <= current <= upper):
                 return False
 
         if self.allowed_contract:
