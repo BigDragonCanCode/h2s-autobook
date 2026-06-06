@@ -17,8 +17,17 @@ The following files in this repository were copied from or derived from the upst
 - `scraper.py`
 - `config.py`
 - `models.py`
+- `notifier_email.py`
 - `scrapers/base.py`
 - `scrapers/holland2stay.py`
+
+In particular, `notifier_email.py` is a partial extraction and adaptation of the upstream email notification logic from:
+
+- `notifier.py`
+
+The local environment examples also reuse relevant configuration keys derived from the upstream example configuration file:
+
+- `.env.example`
 
 In addition:
 
@@ -28,7 +37,7 @@ In addition:
 
 The upstream source files were fetched from the public GitHub repository and copied into this repository with their structure preserved where practical.
 
-The extraction was based on the upstream `booker.py` file, the upstream `scrapers/holland2stay.py` file, and the helper modules those files directly import or depend on in the upstream project.
+The extraction was based on the upstream `booker.py` file, the upstream `scrapers/holland2stay.py` file, the upstream `notifier.py` email notification implementation, the upstream `.env.example`, and the helper modules those files directly import or depend on in the upstream project.
 
 The intent of this extraction was to preserve the original behavior and import relationships closely enough that the copied files remain understandable and workable in isolation inside this repository.
 
@@ -58,5 +67,8 @@ This notice is included to document the source of the copied code and to preserv
 Local modifications made so far include:
 
 - Added an `allowance_price` field for listing result handling.
+- Extracted and adapted only the email-related notification path for:
+  new filtered listings and booking success notifications.
+- Added local runner-specific notification state tracking for previously seen filtered listings.
 
 Additional modification notes can be added here later.
