@@ -22,7 +22,7 @@ def _print_listing(listing: Listing) -> None:
     print(f"  url={listing.url}")
 
 
-def _load_seen_listing_ids(path: Path) -> set[str]:
+def _load_listing_id_set(path: Path) -> set[str]:
     try:
         return set(json.loads(path.read_text(encoding="utf-8")))
     except FileNotFoundError:
@@ -31,8 +31,20 @@ def _load_seen_listing_ids(path: Path) -> set[str]:
         return set()
 
 
-def _save_seen_listing_ids(path: Path, listing_ids: set[str]) -> None:
+def _save_listing_id_set(path: Path, listing_ids: set[str]) -> None:
     path.write_text(json.dumps(sorted(listing_ids), indent=2), encoding="utf-8")
+
+# For bool env vars it always return a string, so we need to parse it to bool. The convention is that "true" (case-insensitive) means True, and anything else means False. If the env var is not set, we return the provided default value.
+def _env_enabled(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() == "true"
+
+
+def _listing_book_key(listing: Listing) -> str:
+    source = (getattr(listing, "source", "") or "holland2stay").strip().lower()
+    return f"{source}:{listing.id}"
 
 
 def _listing_sort_key(listing: Listing) -> tuple[str, float]:
@@ -77,8 +89,8 @@ def setup_logging() -> logging.Logger:
 
 def build_autobook_config() -> AutoBookConfig:
     return AutoBookConfig(
-        enabled=True,
-        dry_run=True,
+        enabled=_env_enabled("AUTO_BOOK_ENABLED", False),
+        dry_run=_env_enabled("AUTO_BOOK_DRY_RUN", True),
         email=os.environ.get("H2S_EMAIL", ""),
         password=os.environ.get("H2S_PASSWORD", ""),
         listing_filter=ListingFilter(
@@ -87,14 +99,15 @@ def build_autobook_config() -> AutoBookConfig:
             allowed_cities=["Rotterdam"],
             allowed_contract=["Indefinite"],
         ),
-        cancel_enabled=False,
-        payment_method="idealcheckout_visa",
+        cancel_enabled=_env_enabled("AUTO_BOOK_CANCEL_ENABLED", False),
+        payment_method=os.environ.get("AUTO_BOOK_PAYMENT_METHOD", "idealcheckout_visa").strip() or "idealcheckout_visa",
     )
 
 
 def run_once() -> int:
     base_dir = Path(__file__).resolve().parent
     seen_path = base_dir / "seen_filtered_listings.json"
+    booked_path = base_dir / "booked_success_listing_ids.json"
     logger = logging.getLogger(__name__)
     email_notifier = ResendEmailNotifier.from_env()
     monitor_range_start = os.environ.get("MONITOR_RANGE_START", "").strip()
@@ -135,9 +148,12 @@ def run_once() -> int:
         print(f"\nAvailable to book after filter: {len(bookable)}")
         logger.info("total scraped listings: %d; after filter: %d", len(all_listings), len(bookable))
 
-        seen_listing_ids = _load_seen_listing_ids(seen_path)
+        seen_listing_ids = _load_listing_id_set(seen_path)
+        booked_listing_ids = _load_listing_id_set(booked_path)
         updated_seen_listing_ids = set(seen_listing_ids)
+        updated_booked_listing_ids = set(booked_listing_ids)
         new_filtered_listings: list[Listing] = []
+        booking_candidates: list[Listing] = []
         for listing in bookable:
             print(f"- {listing.name} ({listing.url})")
             logger.info(
@@ -153,6 +169,11 @@ def run_once() -> int:
                 logger.info("new filtered listing detected: %s", listing.id)
                 new_filtered_listings.append(listing)
                 updated_seen_listing_ids.add(listing.id)
+            book_key = _listing_book_key(listing)
+            if book_key in booked_listing_ids:
+                logger.info("skipping previously booked listing: %s", book_key)
+                continue
+            booking_candidates.append(listing)
 
         if new_filtered_listings and email_notifier is not None:
             new_filtered_listings.sort(key=_listing_sort_key)
@@ -165,7 +186,7 @@ def run_once() -> int:
                 range_end=monitor_range_end,
             )
 
-        _save_seen_listing_ids(seen_path, updated_seen_listing_ids)
+        _save_listing_id_set(seen_path, updated_seen_listing_ids)
 
         if not autobook.enabled:
             print("\nAuto-book disabled. Scrape only.")
@@ -184,14 +205,14 @@ def run_once() -> int:
             )
             return 1
 
-        if not bookable:
-            print("\nNo eligible 'Available to book' listings found.")
-            logger.info("no eligible 'Available to book' listings found after filter")
+        if not booking_candidates:
+            print("\nNo eligible 'Available to book' listings left to attempt.")
+            logger.info("no eligible 'Available to book' listings left after booked-skip filtering")
             return 0
 
         from booker import try_book
 
-        for listing in bookable:
+        for listing in booking_candidates:
             print(f"\n[BOOK] Attempting booking for {listing.name}")
             logger.info("attempting booking for %s", listing.name)
             result = try_book(
@@ -210,6 +231,9 @@ def run_once() -> int:
                     pay_url=result.pay_url,
                     contract_start_date=result.contract_start_date,
                 )
+            if result.success:
+                updated_booked_listing_ids.add(_listing_book_key(listing))
+                _save_listing_id_set(booked_path, updated_booked_listing_ids)
 
         return 0
     finally:

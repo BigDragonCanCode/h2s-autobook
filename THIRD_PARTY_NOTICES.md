@@ -69,10 +69,15 @@ Local modifications made so far include:
 - Added an `allowance_price` field for listing result handling.
 - Extracted and adapted only the email-related notification path for:
   new filtered listings and booking success notifications.
+- Added local monitor/runner entrypoints (`run.py` and `monitor.py`) around the extracted modules.
 - Added local runner-specific notification state tracking for previously seen filtered listings.
 - Batched newly seen filtered listings into a single email digest per run instead of sending one email per listing.
 - Added local runner-side filtering and ordering rules for:
   rent, type, city, contract, and available-from date range checks.
+- Added local environment-driven booking controls for:
+  enable/disable, dry-run, cancel-on-conflict, and payment-method selection.
+- Added local persistent skip state for successful bookings via:
+  `booked_success_listing_ids.json`, so future monitor cycles do not re-attempt a listing that already booked successfully once.
 - Sorted email digest listings by available-from date first, then by price.
 
 Additional modification notes can be added here later.
