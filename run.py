@@ -4,12 +4,16 @@ import json
 import logging
 import os
 import sys
+from datetime import date
 from pathlib import Path
 
 from config import AutoBookConfig, ListingFilter, load_config
 from models import Listing, STATUS_AVAILABLE
 from notifier_email import ResendEmailNotifier
 from scrapers.holland2stay import HollandStayScraper
+
+MONITOR_RANGE_START = "2026-07-01"
+MONITOR_RANGE_END = "2026-07-28"
 
 
 def _print_listing(listing: Listing) -> None:
@@ -30,6 +34,29 @@ def _load_seen_listing_ids(path: Path) -> set[str]:
 
 def _save_seen_listing_ids(path: Path, listing_ids: set[str]) -> None:
     path.write_text(json.dumps(sorted(listing_ids), indent=2), encoding="utf-8")
+
+
+def _listing_sort_key(listing: Listing) -> tuple[str, float]:
+    price = listing.price_value
+    available_from = listing.available_from or "9999-99-99"
+    return (available_from, price if price is not None else float("inf"))
+
+
+def _passes_available_from_range(
+    listing: Listing,
+    min_date: str = MONITOR_RANGE_START,
+    max_date: str = MONITOR_RANGE_END,
+) -> bool:
+    value = listing.available_from
+    if not value:
+        return False
+    try:
+        current = date.fromisoformat(value)
+        lower = date.fromisoformat(min_date)
+        upper = date.fromisoformat(max_date)
+    except ValueError:
+        return False
+    return lower <= current <= upper
 
 
 def main() -> int:
@@ -78,20 +105,22 @@ def main() -> int:
             )
             all_listings.extend(result.listings)
 
-    print(f"\nTotal listings scraped: {len(all_listings)}")
     for listing in all_listings:
         _print_listing(listing)
 
     bookable = [
         listing
         for listing in all_listings
-        if listing.status.lower() == STATUS_AVAILABLE
-        and autobook.listing_filter.passes(listing)
+        if autobook.listing_filter.passes(listing)
+        and _passes_available_from_range(listing)
     ]
 
     print(f"\nAvailable to book after filter: {len(bookable)}")
+    logger.info("total scraped listings: %d; after filter: %d", len(all_listings), len(bookable))
+    
     seen_listing_ids = _load_seen_listing_ids(seen_path)
     updated_seen_listing_ids = set(seen_listing_ids)
+    new_filtered_listings: list[Listing] = []
     for listing in bookable:
         print(f"- {listing.name} ({listing.url})")
         logger.info(
@@ -105,9 +134,19 @@ def main() -> int:
         )
         if listing.id not in seen_listing_ids:
             logger.info("new filtered listing detected: %s", listing.id)
-            if email_notifier is not None:
-                email_notifier.send_new_listing(listing)
+            new_filtered_listings.append(listing)
             updated_seen_listing_ids.add(listing.id)
+
+    if new_filtered_listings and email_notifier is not None:
+        new_filtered_listings.sort(key=_listing_sort_key)
+        logger.info("sending one digest email for %d new filtered listings", len(new_filtered_listings))
+        email_notifier.send_new_listing_digest(
+            new_filtered_listings,
+            ordered_by="available_from, then price",
+            listing_type="Studio",
+            range_start=MONITOR_RANGE_START,
+            range_end=MONITOR_RANGE_END,
+        )
 
     _save_seen_listing_ids(seen_path, updated_seen_listing_ids)
 

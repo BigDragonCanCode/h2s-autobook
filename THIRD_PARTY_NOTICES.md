@@ -70,5 +70,9 @@ Local modifications made so far include:
 - Extracted and adapted only the email-related notification path for:
   new filtered listings and booking success notifications.
 - Added local runner-specific notification state tracking for previously seen filtered listings.
+- Batched newly seen filtered listings into a single email digest per run instead of sending one email per listing.
+- Added local runner-side filtering and ordering rules for:
+  rent, type, city, contract, and available-from date range checks.
+- Sorted email digest listings by available-from date first, then by price.
 
 Additional modification notes can be added here later.

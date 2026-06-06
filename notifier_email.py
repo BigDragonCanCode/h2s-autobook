@@ -128,6 +128,44 @@ def format_new_listing(l: Listing) -> str:
     return "\n".join(lines)
 
 
+def format_new_listing_digest(
+    listings: list[Listing],
+    *,
+    ordered_by: str,
+    listing_type: str,
+    range_start: str,
+    range_end: str,
+) -> str:
+    lines = [
+        f"New Listings ({len(listings)})",
+        f"Ordered by: {ordered_by}",
+        f"Type: {listing_type}",
+        f"Monitoring time range: from {range_start} to {range_end}",
+        "",
+    ]
+    for index, listing in enumerate(listings, start=1):
+        fm = listing.feature_map()
+        source = _source_short(getattr(listing, "source", ""))
+        lines.extend([
+            f"{index}. [{source}] {listing.name}",
+            f"Status: {listing.status}",
+            f"Rent: {listing.price_display}/mo",
+            f"Available: {listing.available_from or '?'}",
+        ])
+        if getattr(listing, "allowance_price", None):
+            lines.append(f"Allowance: {listing.allowance_price}")
+        lines.extend([
+            f"Type: {fm.get('type', '—')}",
+            f"Area: {fm.get('area', '—')}",
+            f"Floor: {fm.get('floor', '—')}",
+            f"Energy: {fm.get('energy_label', '—')}",
+            f"Contract: {fm.get('contract', '—')}",
+            listing.url,
+            "",
+        ])
+    return "\n".join(lines).rstrip()
+
+
 def format_booking_success(l: Listing, pay_url: str = "", contract_start_date: str = "") -> str:
     start = contract_start_date or l.available_from or "?"
     source = _source_short(getattr(l, "source", ""))
@@ -198,6 +236,25 @@ class ResendEmailNotifier:
 
     def send_new_listing(self, listing: Listing) -> bool:
         return self.send_text(format_new_listing(listing))
+
+    def send_new_listing_digest(
+        self,
+        listings: list[Listing],
+        *,
+        ordered_by: str,
+        listing_type: str,
+        range_start: str,
+        range_end: str,
+    ) -> bool:
+        return self.send_text(
+            format_new_listing_digest(
+                listings,
+                ordered_by=ordered_by,
+                listing_type=listing_type,
+                range_start=range_start,
+                range_end=range_end,
+            )
+        )
 
     def send_booking_success(self, listing: Listing, pay_url: str = "", contract_start_date: str = "") -> bool:
         return self.send_text(format_booking_success(listing, pay_url, contract_start_date))
