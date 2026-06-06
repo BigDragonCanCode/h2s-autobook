@@ -656,10 +656,10 @@ class AutoBookConfig:
                         "idealcheckout_mastercard"  → Mastercard 信用卡
                       注意：Visa / Mastercard 仅适用于已在 H2S 账号绑定对应卡的用户。
     """
-    enabled: bool = False
+    enabled: bool = True
     dry_run: bool = True
-    email: str = ""
-    password: str = ""
+    email: str = os.environ.get("H2S_EMAIL", "")
+    password: str = os.environ.get("H2S_PASSWORD", "")
     listing_filter: ListingFilter = field(default_factory=ListingFilter)
     cancel_enabled: bool = False
     payment_method: str = "idealcheckout_ideal"
