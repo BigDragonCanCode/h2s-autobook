@@ -120,6 +120,7 @@ class Listing:
     contract_start_date  预订用的合同开始日期（来自 next_contract_startdate 属性）；
                     与 available_from 不同：available_from 用于展示/日历，
                     contract_start_date 用于预订 API 调用；可能为 None
+    allowance_price 补贴金额字符串，e.g. "€0" / "€150"；无补贴时为 None
     source          房源所在的第三方平台标识，与 ``scrapers.SCRAPER_REGISTRY`` 的
                     key 一致。P0 阶段默认 ``"holland2stay"``，单源行为不变；
                     P1 起新平台（OurDomain / DUWO 等）会用 ``"ourdomain"`` / ``"duwo"``。
@@ -140,6 +141,7 @@ class Listing:
     sku: str = ""
     contract_id: Optional[int] = None
     contract_start_date: Optional[str] = None
+    allowance_price: Optional[str] = None
     source: str = "holland2stay"
 
     # feature_map() 解析结果缓存，排除在 __repr__ / __eq__ / __init__ 之外
