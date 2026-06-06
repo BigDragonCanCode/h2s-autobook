@@ -39,6 +39,20 @@ def _env_enabled(name: str, default: bool) -> bool:
     return raw.strip().lower() == "true"
 
 
+def _env_list(name: str, default: list[str]) -> list[str]:
+    raw = os.environ.get(name)
+    if raw is None:
+        return list(default)
+    return [part.strip() for part in raw.split("|") if part.strip()]
+
+
+def _env_float(name: str, default: float | None) -> float | None:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    return float(raw.strip())
+
+
 def _listing_book_key(listing: Listing) -> str:
     source = (getattr(listing, "source", "") or "holland2stay").strip().lower()
     return f"{source}:{listing.id}"
@@ -72,10 +86,9 @@ def build_autobook_config() -> AutoBookConfig:
         email=os.environ.get("H2S_EMAIL", ""),
         password=os.environ.get("H2S_PASSWORD", ""),
         listing_filter=ListingFilter(
-            max_rent=1300,
-            allowed_types=["Studio"],
-            allowed_cities=["Rotterdam"],
-            allowed_contract=["Indefinite"],
+            max_rent=_env_float("AUTO_BOOK_MAX_RENT", 1300),
+            allowed_types=_env_list("AUTO_BOOK_ALLOWED_TYPES", ["Studio"]),
+            allowed_contract=_env_list("AUTO_BOOK_ALLOWED_CONTRACTS", ["Indefinite"]),
             available_from_start=os.environ.get("MONITOR_RANGE_START", "").strip(),
             available_from_end=os.environ.get("MONITOR_RANGE_END", "").strip(),
         ),
