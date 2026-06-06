@@ -215,6 +215,7 @@ def run_once() -> int:
                     listing,
                     pay_url=result.pay_url,
                     contract_start_date=result.contract_start_date,
+                    order_id=result.order_id,
                 )
             if result.success:
                 updated_booked_listing_ids.add(_listing_book_key(listing))

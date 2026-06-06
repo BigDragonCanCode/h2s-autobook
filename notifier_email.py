@@ -168,13 +168,19 @@ def format_new_listing_digest(
     return "\n".join(lines).rstrip()
 
 
-def format_booking_success(l: Listing, pay_url: str = "", contract_start_date: str = "") -> str:
+def format_booking_success(
+    l: Listing,
+    pay_url: str = "",
+    contract_start_date: str = "",
+    order_id: str = "",
+) -> str:
     start = contract_start_date or l.available_from or "?"
     source = _source_short(getattr(l, "source", ""))
     lines = [
         f"[{source}] Booking Successful!",
         "",
         l.name,
+        f"Order ID: {order_id or '-'}",
         f"Basic rent: {l.basic_rent_display}/mo",
         f"Total monthly cost: {l.price_display}/mo",
         f"Move-in: {start}",
@@ -263,8 +269,14 @@ class ResendEmailNotifier:
             )
         )
 
-    def send_booking_success(self, listing: Listing, pay_url: str = "", contract_start_date: str = "") -> bool:
-        return self.send_text(format_booking_success(listing, pay_url, contract_start_date))
+    def send_booking_success(
+        self,
+        listing: Listing,
+        pay_url: str = "",
+        contract_start_date: str = "",
+        order_id: str = "",
+    ) -> bool:
+        return self.send_text(format_booking_success(listing, pay_url, contract_start_date, order_id))
 
     def close(self) -> None:
         self._session.close()
