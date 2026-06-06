@@ -110,7 +110,8 @@ def format_new_listing(l: Listing) -> str:
         "",
         l.name,
         f"Status: {l.status}",
-        f"Rent: {l.price_display}/mo",
+        f"Basic rent: {l.basic_rent_display}/mo",
+        f"Total monthly cost: {l.price_display}/mo",
         f"Available: {l.available_from or '?'}",
     ]
     if getattr(l, "allowance_price", None):
@@ -149,7 +150,8 @@ def format_new_listing_digest(
         lines.extend([
             f"{index}. [{source}] {listing.name}",
             f"Status: {listing.status}",
-            f"Rent: {listing.price_display}/mo",
+            f"Basic rent: {listing.basic_rent_display}/mo",
+            f"Total monthly cost: {listing.price_display}/mo",
             f"Available: {listing.available_from or '?'}",
         ])
         if getattr(listing, "allowance_price", None):
@@ -173,16 +175,21 @@ def format_booking_success(l: Listing, pay_url: str = "", contract_start_date: s
         f"[{source}] Booking Successful!",
         "",
         l.name,
-        f"Rent: {l.price_display}/mo",
+        f"Basic rent: {l.basic_rent_display}/mo",
+        f"Total monthly cost: {l.price_display}/mo",
         f"Move-in: {start}",
     ]
     if getattr(l, "allowance_price", None):
         lines.append(f"Allowance: {l.allowance_price}")
     lines.extend([
         "",
-        "Pay now (time-sensitive):",
+        "Pay now (expire in 1 hour):",
         "",
         pay_url or l.url,
+        "",
+        "Original listing:",
+        "",
+        l.url,
     ])
     return "\n".join(lines)
 

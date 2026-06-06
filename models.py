@@ -107,7 +107,8 @@ class Listing:
     name            展示名，e.g. "Kastanjelaan 1-108, Eindhoven"
     status          可用性状态，直接来自 GraphQL `available_to_book` 属性的 label。
                     常见值："Available to book" | "Available in lottery" | "Not available"
-    price_raw       原始价格字符串，e.g. "€707"（由 scraper 从 basic_rent 属性格式化）
+    price_raw       原始总价字符串，e.g. "€1600"（由 scraper 优先从 price 属性格式化）
+    basic_rent_raw  原始基础租金字符串，e.g. "€1395"（由 scraper 从 basic_rent 属性格式化）
     available_from  入住日期，ISO 格式 "YYYY-MM-DD"，来自 available_startdate 属性
     features        特征列表，格式 ["Type: Studio", "Area: 26.0 m²", "Floor: 3", ...]
                     由 scraper 从多个 custom_attributesV2 属性拼装而来
@@ -137,6 +138,7 @@ class Listing:
     available_from: Optional[str]
     features: list[str]
     url: str
+    basic_rent_raw: Optional[str] = None
     city: str = ""
     sku: str = ""
     contract_id: Optional[int] = None
@@ -178,6 +180,13 @@ class Listing:
             return "价格未知"
         m = re.search(r"€[\d,\.]+", self.price_raw)
         return m.group() if m else self.price_raw
+
+    @property
+    def basic_rent_display(self) -> str:
+        if not self.basic_rent_raw:
+            return "价格未知"
+        m = re.search(r"€[\d,\.]+", self.basic_rent_raw)
+        return m.group() if m else self.basic_rent_raw
 
     @property
     def is_available(self) -> bool:
@@ -234,6 +243,7 @@ class Listing:
             "name": self.name,
             "status": self.status,
             "price_raw": self.price_raw,
+            "basic_rent_raw": self.basic_rent_raw,
             "available_from": self.available_from,
             "features": self.features,
             "url": self.url,

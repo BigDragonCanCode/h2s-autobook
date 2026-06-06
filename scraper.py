@@ -340,8 +340,14 @@ def _to_listing(item: dict, city_name: str) -> Optional[Listing]:
         else:
             status = "Unknown"
 
+        basic_rent = attrs.get("basic_rent")
+        if basic_rent:
+            basic_rent_raw = f"€{float(basic_rent):.0f}"
+        else:
+            basic_rent_raw = None
+
         # 优先取总价（含服务费/水电/管理费），其次基础租金，最后从 price_range 降级
-        raw = attrs.get("price") or attrs.get("basic_rent")
+        raw = attrs.get("price") or basic_rent
         if raw:
             price_raw = f"€{float(raw):.0f}"
         else:
@@ -412,6 +418,7 @@ def _to_listing(item: dict, city_name: str) -> Optional[Listing]:
             name=item.get("name") or listing_id,
             status=status,
             price_raw=price_raw,
+            basic_rent_raw=basic_rent_raw,
             available_from=available_from,
             features=features,
             url=url,
