@@ -7,13 +7,12 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from config import AutoBookConfig, ListingFilter, load_config
+from dotenv import load_dotenv
+
+from config import AutoBookConfig, ENV_PATH, ListingFilter, load_config
 from models import Listing, STATUS_AVAILABLE
 from notifier_email import ResendEmailNotifier
 from scrapers.holland2stay import HollandStayScraper
-
-MONITOR_RANGE_START = "2026-07-01"
-MONITOR_RANGE_END = "2026-07-28"
 
 
 def _print_listing(listing: Listing) -> None:
@@ -44,9 +43,11 @@ def _listing_sort_key(listing: Listing) -> tuple[str, float]:
 
 def _passes_available_from_range(
     listing: Listing,
-    min_date: str = MONITOR_RANGE_START,
-    max_date: str = MONITOR_RANGE_END,
+    min_date: str,
+    max_date: str,
 ) -> bool:
+    if not min_date or not max_date:
+        return True
     value = listing.available_from
     if not value:
         return False
@@ -59,10 +60,9 @@ def _passes_available_from_range(
     return lower <= current <= upper
 
 
-def main() -> int:
+def setup_logging() -> logging.Logger:
     base_dir = Path(__file__).resolve().parent
     log_path = base_dir / "run.log"
-    seen_path = base_dir / "seen_filtered_listings.json"
     logging.basicConfig(
         level=os.environ.get("LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -72,11 +72,11 @@ def main() -> int:
         ],
         force=True,
     )
-    logger = logging.getLogger(__name__)
-    email_notifier = ResendEmailNotifier.from_env()
+    return logging.getLogger(__name__)
 
-    cfg = load_config()
-    autobook = AutoBookConfig(
+
+def build_autobook_config() -> AutoBookConfig:
+    return AutoBookConfig(
         enabled=True,
         dry_run=True,
         email=os.environ.get("H2S_EMAIL", ""),
@@ -90,121 +90,137 @@ def main() -> int:
         cancel_enabled=False,
         payment_method="idealcheckout_visa",
     )
-    scraper = HollandStayScraper()
 
-    all_listings: list[Listing] = []
 
-    with scraper.batch_session():
-        for task in cfg.scrape_tasks_v2():
-            result = scraper.scrape(task)
-            if result.error:
-                print(f"[ERROR] {task.city_display}: {result.error}", file=sys.stderr)
-            print(
-                f"[SCRAPE] city={task.city_display} source={task.source} "
-                f"listings={len(result.listings)} complete={result.complete}"
-            )
-            all_listings.extend(result.listings)
+def run_once() -> int:
+    base_dir = Path(__file__).resolve().parent
+    seen_path = base_dir / "seen_filtered_listings.json"
+    logger = logging.getLogger(__name__)
+    email_notifier = ResendEmailNotifier.from_env()
+    monitor_range_start = os.environ.get("MONITOR_RANGE_START", "").strip()
+    monitor_range_end = os.environ.get("MONITOR_RANGE_END", "").strip()
+    try:
+        cfg = load_config()
+        autobook = build_autobook_config()
+        scraper = HollandStayScraper()
 
-    for listing in all_listings:
-        _print_listing(listing)
+        all_listings: list[Listing] = []
 
-    bookable = [
-        listing
-        for listing in all_listings
-        if autobook.listing_filter.passes(listing)
-        and _passes_available_from_range(listing)
-    ]
+        with scraper.batch_session():
+            for task in cfg.scrape_tasks_v2():
+                result = scraper.scrape(task)
+                if result.error:
+                    print(f"[ERROR] {task.city_display}: {result.error}", file=sys.stderr)
+                print(
+                    f"[SCRAPE] city={task.city_display} source={task.source} "
+                    f"listings={len(result.listings)} complete={result.complete}"
+                )
+                all_listings.extend(result.listings)
 
-    print(f"\nAvailable to book after filter: {len(bookable)}")
-    logger.info("total scraped listings: %d; after filter: %d", len(all_listings), len(bookable))
-    
-    seen_listing_ids = _load_seen_listing_ids(seen_path)
-    updated_seen_listing_ids = set(seen_listing_ids)
-    new_filtered_listings: list[Listing] = []
-    for listing in bookable:
-        print(f"- {listing.name} ({listing.url})")
-        logger.info(
-            "passed filter: name=%s city=%s status=%s price=%s available_from=%s url=%s",
-            listing.name,
-            listing.city,
-            listing.status,
-            listing.price_display,
-            listing.available_from or "-",
-            listing.url,
-        )
-        if listing.id not in seen_listing_ids:
-            logger.info("new filtered listing detected: %s", listing.id)
-            new_filtered_listings.append(listing)
-            updated_seen_listing_ids.add(listing.id)
+        for listing in all_listings:
+            _print_listing(listing)
 
-    if new_filtered_listings and email_notifier is not None:
-        new_filtered_listings.sort(key=_listing_sort_key)
-        logger.info("sending one digest email for %d new filtered listings", len(new_filtered_listings))
-        email_notifier.send_new_listing_digest(
-            new_filtered_listings,
-            ordered_by="available_from, then price",
-            listing_type="Studio",
-            range_start=MONITOR_RANGE_START,
-            range_end=MONITOR_RANGE_END,
-        )
-
-    _save_seen_listing_ids(seen_path, updated_seen_listing_ids)
-
-    if not autobook.enabled:
-        print("\nAuto-book disabled. Scrape only.")
-        logger.info("auto-book disabled; scrape-only run complete")
-        if email_notifier is not None:
-            email_notifier.close()
-        return 0
-
-    if autobook.dry_run:
-        print("\nAuto-book enabled, but dry_run=true. Skipping booker.py entirely.")
-        logger.info("auto-book enabled but dry_run=true; skipped booking")
-        if email_notifier is not None:
-            email_notifier.close()
-        return 0
-
-    if not autobook.email or not autobook.password:
-        print(
-            "\nAuto-book enabled, but H2S_EMAIL or H2S_PASSWORD is missing in .env.",
-            file=sys.stderr,
-        )
-        if email_notifier is not None:
-            email_notifier.close()
-        return 1
-
-    if not bookable:
-        print("\nNo eligible 'Available to book' listings found.")
-        logger.info("no eligible 'Available to book' listings found after filter")
-        if email_notifier is not None:
-            email_notifier.close()
-        return 0
-
-    from booker import try_book
-
-    for listing in bookable:
-        print(f"\n[BOOK] Attempting booking for {listing.name}")
-        logger.info("attempting booking for %s", listing.name)
-        result = try_book(
-            listing,
-            autobook.email,
-            autobook.password,
-            dry_run=False,
-            cancel_enabled=autobook.cancel_enabled,
-            payment_method=autobook.payment_method,
-        )
-        print(result.message)
-        logger.info("booking result for %s: success=%s phase=%s", listing.name, result.success, result.phase)
-        if result.success and email_notifier is not None:
-            email_notifier.send_booking_success(
+        bookable = [
+            listing
+            for listing in all_listings
+            if listing.status.lower() == STATUS_AVAILABLE
+            and autobook.listing_filter.passes(listing)
+            and _passes_available_from_range(
                 listing,
-                pay_url=result.pay_url,
-                contract_start_date=result.contract_start_date,
+                min_date=monitor_range_start,
+                max_date=monitor_range_end,
+            )
+        ]
+
+        print(f"\nAvailable to book after filter: {len(bookable)}")
+        logger.info("total scraped listings: %d; after filter: %d", len(all_listings), len(bookable))
+
+        seen_listing_ids = _load_seen_listing_ids(seen_path)
+        updated_seen_listing_ids = set(seen_listing_ids)
+        new_filtered_listings: list[Listing] = []
+        for listing in bookable:
+            print(f"- {listing.name} ({listing.url})")
+            logger.info(
+                "passed filter: name=%s city=%s status=%s price=%s available_from=%s url=%s",
+                listing.name,
+                listing.city,
+                listing.status,
+                listing.price_display,
+                listing.available_from or "-",
+                listing.url,
+            )
+            if listing.id not in seen_listing_ids:
+                logger.info("new filtered listing detected: %s", listing.id)
+                new_filtered_listings.append(listing)
+                updated_seen_listing_ids.add(listing.id)
+
+        if new_filtered_listings and email_notifier is not None:
+            new_filtered_listings.sort(key=_listing_sort_key)
+            logger.info("sending one digest email for %d new filtered listings", len(new_filtered_listings))
+            email_notifier.send_new_listing_digest(
+                new_filtered_listings,
+                ordered_by="available_from, then price",
+                listing_type="Studio",
+                range_start=monitor_range_start,
+                range_end=monitor_range_end,
             )
 
-    if email_notifier is not None:
-        email_notifier.close()
-    return 0
+        _save_seen_listing_ids(seen_path, updated_seen_listing_ids)
+
+        if not autobook.enabled:
+            print("\nAuto-book disabled. Scrape only.")
+            logger.info("auto-book disabled; scrape-only run complete")
+            return 0
+
+        if autobook.dry_run:
+            print("\nAuto-book enabled, but dry_run=true. Skipping booker.py entirely.")
+            logger.info("auto-book enabled but dry_run=true; skipped booking")
+            return 0
+
+        if not autobook.email or not autobook.password:
+            print(
+                "\nAuto-book enabled, but H2S_EMAIL or H2S_PASSWORD is missing in .env.",
+                file=sys.stderr,
+            )
+            return 1
+
+        if not bookable:
+            print("\nNo eligible 'Available to book' listings found.")
+            logger.info("no eligible 'Available to book' listings found after filter")
+            return 0
+
+        from booker import try_book
+
+        for listing in bookable:
+            print(f"\n[BOOK] Attempting booking for {listing.name}")
+            logger.info("attempting booking for %s", listing.name)
+            result = try_book(
+                listing,
+                autobook.email,
+                autobook.password,
+                dry_run=False,
+                cancel_enabled=autobook.cancel_enabled,
+                payment_method=autobook.payment_method,
+            )
+            print(result.message)
+            logger.info("booking result for %s: success=%s phase=%s", listing.name, result.success, result.phase)
+            if result.success and email_notifier is not None:
+                email_notifier.send_booking_success(
+                    listing,
+                    pay_url=result.pay_url,
+                    contract_start_date=result.contract_start_date,
+                )
+
+        return 0
+    finally:
+        if email_notifier is not None:
+            email_notifier.close()
+
+
+def main() -> int:
+    load_dotenv(dotenv_path=ENV_PATH, override=True)
+    setup_logging()
+    return run_once()
 
 
 if __name__ == "__main__":
