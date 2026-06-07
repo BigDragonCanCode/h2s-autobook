@@ -400,26 +400,11 @@ def cancel_pending_orders(session: req.Session, token: str) -> int:
     -------
     成功取消的订单数（0 表示无待取消订单）
     """
-    query = '''
-    {
-      customer {
-        orders(pageSize: 10, currentPage: 1) {
-          items {
-            id
-            number
-            status
-          }
-        }
-      }
-    }
-    '''
     try:
-        data = _gql(session, query, token=token)
+        items = fetch_customer_orders(session, token)
     except Exception as e:
         logger.warning("查询订单列表失败（忽略）: %s", e)
         return 0
-
-    items = (data.get("customer") or {}).get("orders", {}).get("items") or []
     CANCEL_STATUSES = {"pending", "pending_payment", "reserved", "processing"}
     to_cancel = [
         (o["id"], o["number"])
@@ -462,6 +447,44 @@ def cancel_pending_orders(session: req.Session, token: str) -> int:
         )
 
     return cancelled
+
+
+def fetch_customer_orders(session: req.Session, token: str) -> list[dict]:
+    query = '''
+    {
+      customer {
+        orders(pageSize: 10, currentPage: 1) {
+          items {
+            id
+            number
+            status
+          }
+        }
+      }
+    }
+    '''
+    data = _gql(session, query, token=token)
+    return (data.get("customer") or {}).get("orders", {}).get("items") or []
+
+
+def cancel_order_by_id(session: req.Session, token: str, order_id: str) -> None:
+    order_id = (order_id or "").strip()
+    if not order_id:
+        raise RuntimeError("order_id 不能为空")
+    q = '''
+    mutation CancelOrder($orderId: ID!, $reason: String!) {
+      cancelOrder(input: { order_id: $orderId, reason: $reason }) {
+        order { id status }
+      }
+    }
+    '''
+    data = _gql(
+        session,
+        q,
+        token=token,
+        variables={"orderId": order_id, "reason": _CANCEL_REASON},
+    )
+    logger.info("cancelOrder raw response for order_id=%s: %r", order_id, data)
 
 
 # ------------------------------------------------------------------ #
@@ -702,6 +725,7 @@ class BookingResult:
     dry_run               : True 表示是 dry_run 模式产生的结果（未实际提交）
     pay_url               : _ideal_checkout() 返回的直链付款 URL；
                             失败时为空字符串；dry_run 时也为空字符串
+    order_id              : placeOrder 返回的订单号；失败或 dry_run 时为空字符串
     contract_start_date   : _fetch_sku_and_contract() 从 API 获取的实际合同开始日期，
                             格式 "YYYY-MM-DD"；未知时为空字符串。
     phase                 : 内部流程阶段标识，供调用方判断失败类型：
@@ -718,6 +742,7 @@ class BookingResult:
     message: str
     dry_run: bool = False
     pay_url: str = ""
+    order_id: str = ""
     contract_start_date: str = ""
     phase: BookingPhase = ""
 
@@ -885,7 +910,7 @@ def try_book(
 
         booking_url = f"https://www.holland2stay.com/residences/{listing.id}.html"
 
-        def _do_book() -> tuple[str, float, float]:
+        def _do_book() -> tuple[str, str, float, float]:
             """
             createEmptyCart → addNewBooking → setPaymentMethodOnCart
             → placeOrder → idealCheckOut。
@@ -913,11 +938,11 @@ def try_book(
 
             logger.info("[%s] 订单 #%s 支付链接已生成 | add=%.2fs pay=%.2fs",
                         listing.name, order_number, t_add_val, t_pay_val)
-            return pay_url, t_add_val, t_pay_val
+            return order_number, pay_url, t_add_val, t_pay_val
 
         # ---- Step 3: 执行预订（含错误分类重试） ---- #
         try:
-            pay_url, t_add, t_pay = _do_book()
+            order_id, pay_url, t_add, t_pay = _do_book()
             phase = "success"
         except RuntimeError as book_err:
             err_str = str(book_err)
@@ -951,7 +976,7 @@ def try_book(
                 t_cancel = time.monotonic() - tc1
                 logger.info("[%s] 已取消 %d 笔旧订单 (%.2fs)，重新预订...",
                             listing.name, cancelled, t_cancel)
-                pay_url, t_add, t_pay = _do_book()
+                order_id, pay_url, t_add, t_pay = _do_book()
 
             else:
                 phase = "unknown_error"
@@ -962,6 +987,7 @@ def try_book(
             f"✅ 自动预订成功！\n"
             f"\n"
             f"🏠 {listing.name}\n"
+            f"🧾 Order ID: {order_id}\n"
             f"📅 入住：{start_date or '待定'}\n"
             f"\n"
             f"⚡ 点击链接立即付款（有时限，请尽快）：\n"
@@ -978,7 +1004,7 @@ def try_book(
             "[%s] 预订成功  入住:%s | 耗时 total=%.1fs (%s)",
             listing.name, start_date, total, parts,
         )
-        return BookingResult(listing, True, msg, pay_url=pay_url,
+        return BookingResult(listing, True, msg, pay_url=pay_url, order_id=order_id,
                              contract_start_date=start_date or "", phase="success")
 
     except BookingBlockedError as block_err:
