@@ -86,6 +86,10 @@ class PrewarmedSession:
 
 
 GQL_URL = "https://api.holland2stay.com/graphql/"
+CUSTOMER_ORDERS_URL = (
+    "https://api.holland2stay.com/rest/V1/customer/orders"
+    "?fields=items[increment_id,entity_id,created_at,items[name,product_option],grand_total,status]"
+)
 
 _BASE_HEADERS = {
     "Accept":       "application/graphql-response+json,application/json;q=0.9",
@@ -450,21 +454,39 @@ def cancel_pending_orders(session: req.Session, token: str) -> int:
 
 
 def fetch_customer_orders(session: req.Session, token: str) -> list[dict]:
-    query = '''
-    {
-      customer {
-        orders(pageSize: 10, currentPage: 1) {
-          items {
-            id
-            number
-            status
-          }
-        }
-      }
+    headers = {
+        **_BASE_HEADERS,
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}",
     }
-    '''
-    data = _gql(session, query, token=token)
-    return (data.get("customer") or {}).get("orders", {}).get("items") or []
+    resp = session.get(CUSTOMER_ORDERS_URL, headers=headers, timeout=30)
+    _check_blocked(resp, "customer/orders REST")
+    resp.raise_for_status()
+
+    payload = resp.json()
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, list):
+        raise RuntimeError(f"customer/orders REST 响应缺少 items 数组: {payload!r}")
+
+    orders: list[dict] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        order_id = item.get("entity_id")
+        order_number = item.get("increment_id")
+        status = item.get("status")
+        if order_id in (None, "") or order_number in (None, ""):
+            logger.warning("跳过缺少 entity_id/increment_id 的订单: %r", item)
+            continue
+        orders.append({
+            "id": str(order_id),
+            "number": str(order_number),
+            "status": str(status or ""),
+            "created_at": item.get("created_at", ""),
+            "grand_total": item.get("grand_total"),
+            "items": item.get("items") if isinstance(item.get("items"), list) else [],
+        })
+    return orders
 
 
 def cancel_order_by_id(session: req.Session, token: str, order_id: str) -> None:
@@ -482,7 +504,7 @@ def cancel_order_by_id(session: req.Session, token: str, order_id: str) -> None:
         session,
         q,
         token=token,
-        variables={"orderId": order_id, "reason": _CANCEL_REASON},
+        variables={"orderId": order_id, "reason": ""},
     )
     logger.info("cancelOrder raw response for order_id=%s: %r", order_id, data)
 
