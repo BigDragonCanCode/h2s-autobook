@@ -104,6 +104,15 @@ def write_env_key(key: str, value: str) -> None:
     ENV_PATH.write_text("".join(new_lines), encoding="utf-8")
 
 
+def _filter_debug_enabled() -> bool:
+    return os.environ.get("H2S_FILTER_DEBUG", "").strip().lower() == "true"
+
+
+def _debug_filter_reject(listing_name: str, reason: str) -> None:
+    if _filter_debug_enabled():
+        print(f"[FILTER REJECT] {listing_name}: {reason}")
+
+
 def resolve_project_path(path_str: str | os.PathLike[str]) -> Path:
     """
     将路径解析为稳定的绝对路径。
@@ -553,50 +562,59 @@ class ListingFilter:
         if self.max_rent is not None:
             price = listing.price_value
             if price is None:
+                _debug_filter_reject(listing.name, f"max_rent={self.max_rent} but price missing")
                 logger.warning(
                     "过滤拒绝 [%s]: 已设 max_rent=%.0f 但价格字段缺失（API 未返回）",
                     listing.name, self.max_rent,
                 )
                 return False
             if price > self.max_rent:
+                _debug_filter_reject(listing.name, f"price {price} > max_rent {self.max_rent}")
                 return False
 
         area_str = fm.get("area", "")
         area = parse_float(area_str)
         if self.min_area is not None:
             if area is None:
+                _debug_filter_reject(listing.name, f"min_area={self.min_area} but area missing")
                 logger.warning(
                     "过滤拒绝 [%s]: 已设 min_area=%.0f 但面积字段缺失（API 未返回）",
                     listing.name, self.min_area,
                 )
                 return False
             if area < self.min_area:
+                _debug_filter_reject(listing.name, f"area {area} < min_area {self.min_area}")
                 return False
         if self.min_floor is not None:
             floor_str = fm.get("floor", "")
             floor = parse_int(floor_str)
             if floor is None:
+                _debug_filter_reject(listing.name, f"min_floor={self.min_floor} but floor missing/invalid {floor_str!r}")
                 logger.warning(
                     "过滤拒绝 [%s]: 已设 min_floor=%d 但楼层字段缺失（API 返回: %r）",
                     listing.name, self.min_floor, floor_str,
                 )
                 return False
             if floor < self.min_floor:
+                _debug_filter_reject(listing.name, f"floor {floor} < min_floor {self.min_floor}")
                 return False
 
         if self.allowed_occupancy:
             occ = fm.get("occupancy", "")
             if not any(a.lower() in occ.lower() for a in self.allowed_occupancy):
+                _debug_filter_reject(listing.name, f"occupancy {occ!r} not in {self.allowed_occupancy!r}")
                 return False
 
         if self.allowed_types:
             rtype = fm.get("type", "")
             if not any(a.lower() in rtype.lower() for a in self.allowed_types):
+                _debug_filter_reject(listing.name, f"type {rtype!r} not in {self.allowed_types!r}")
                 return False
 
         if self.allowed_neighborhoods:
             nbhd = fm.get("neighborhood", "")
             if not any(a.lower() in nbhd.lower() for a in self.allowed_neighborhoods):
+                _debug_filter_reject(listing.name, f"neighborhood {nbhd!r} not in {self.allowed_neighborhoods!r}")
                 return False
 
         if self.allowed_buildings:
@@ -605,64 +623,78 @@ class ListingFilter:
                 needle.lower() in listing_name.lower()
                 for needle in self.allowed_buildings
             ):
+                _debug_filter_reject(listing.name, f"name {listing_name!r} not matched by {self.allowed_buildings!r}")
                 return False
 
         if self.allowed_cities:
             city = listing.city or ""
             if not any(a.lower() == city.lower() for a in self.allowed_cities):
+                _debug_filter_reject(listing.name, f"city {city!r} not in {self.allowed_cities!r}")
                 return False
 
         if self.allowed_sources:
             source = listing.source or "holland2stay"
             if not any(a.lower() == source.lower() for a in self.allowed_sources):
+                _debug_filter_reject(listing.name, f"source {source!r} not in {self.allowed_sources!r}")
                 return False
 
         if self.available_from_start.strip() and self.available_from_end.strip():
             value = listing.available_from
             if not value:
+                _debug_filter_reject(listing.name, "available_from missing")
                 return False
             try:
                 current = date.fromisoformat(value)
                 lower = date.fromisoformat(self.available_from_start)
                 upper = date.fromisoformat(self.available_from_end)
             except ValueError:
+                _debug_filter_reject(listing.name, f"invalid available_from/date window value={value!r} start={self.available_from_start!r} end={self.available_from_end!r}")
                 return False
             if not (lower <= current <= upper):
+                _debug_filter_reject(listing.name, f"available_from {value} outside {self.available_from_start}..{self.available_from_end}")
                 return False
 
         if self.allowed_contract:
             contract = fm.get("contract", "")
             if not any(a.lower() in contract.lower() for a in self.allowed_contract):
+                _debug_filter_reject(listing.name, f"contract {contract!r} not in {self.allowed_contract!r}")
                 return False
 
         if self.allowed_tenant:
             tenant = fm.get("tenant", "")
             if not any(a.lower() in tenant.lower() for a in self.allowed_tenant):
+                _debug_filter_reject(listing.name, f"tenant {tenant!r} not in {self.allowed_tenant!r}")
                 return False
 
         if self.allowed_offer:
             offer = fm.get("offer", "")
             if not any(a.lower() in offer.lower() for a in self.allowed_offer):
+                _debug_filter_reject(listing.name, f"offer {offer!r} not in {self.allowed_offer!r}")
                 return False
 
         if self.allowed_finishing:
             furnishing = fm.get("furnishing", "")
             if not any(a.lower() in furnishing.lower() for a in self.allowed_finishing):
+                _debug_filter_reject(listing.name, f"furnishing {furnishing!r} not in {self.allowed_finishing!r}")
                 return False
 
         if isinstance(self.allowed_energy, str) and self.allowed_energy.strip():
             energy = fm.get("energy_label", "").strip().upper()
             if not energy:
+                _debug_filter_reject(listing.name, f"energy missing while allowed_energy={self.allowed_energy!r}")
                 return False  # 房源无能耗标签，设置了最低要求则拒绝
             min_rank = energy_rank(self.allowed_energy)
             if min_rank is None:
+                _debug_filter_reject(listing.name, f"invalid allowed_energy config {self.allowed_energy!r}")
                 logger.warning("无效能耗等级配置 %r，过滤条件忽略", self.allowed_energy)
                 return False  # 配置了无效等级（如 "banana"）→ fail-closed
             actual_rank = energy_rank(energy)
             if actual_rank is None:
+                _debug_filter_reject(listing.name, f"energy label {energy!r} unknown")
                 logger.warning("房源 %r 能耗标签不在白名单中: %r", listing.name, energy)
                 return False
             if actual_rank > min_rank:
+                _debug_filter_reject(listing.name, f"energy {energy!r} below allowed_energy {self.allowed_energy!r}")
                 return False
 
         return True
