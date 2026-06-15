@@ -18,10 +18,12 @@ scrapers/holland2stay.py — Holland2Stay 适配层（**逻辑不在这**）
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import contextmanager
 
 import curl_cffi.requests as req
 
+from cdp_browser_fetcher import CdpBrowserFetcher
 from config import get_impersonate, get_proxy_url
 from models import Listing
 
@@ -35,11 +37,19 @@ from .base import (
 logger = logging.getLogger(__name__)
 
 
+def _use_real_chrome_cdp() -> bool:
+    return (os.environ.get("H2S_USE_REAL_CHROME_CDP", "").strip().lower() == "true")
+
+
 def _make_session() -> req.Session:
     """新建一个 curl_cffi Session（固定一个 TLS 指纹 + 代理）。"""
     proxy = get_proxy_url()
     proxies = {"https": proxy, "http": proxy} if proxy else {}
     return req.Session(impersonate=get_impersonate(), proxies=proxies)
+
+
+def _make_cdp_fetcher() -> CdpBrowserFetcher:
+    return CdpBrowserFetcher(debug_url=os.environ.get("H2S_CDP_URL", "http://127.0.0.1:9222"))
 
 
 class HollandStayScraper(AbstractScraper):
@@ -64,11 +74,20 @@ class HollandStayScraper(AbstractScraper):
 
     def __init__(self) -> None:
         # 批次作用域内的共享 Session；None 表示当前不在批次中。
-        self._batch_session: req.Session | None = None
+        self._batch_session: req.Session | CdpBrowserFetcher | None = None
 
     @contextmanager
     def batch_session(self):
         """整批一个 Session + 一个固定 TLS 指纹（见类 docstring）。"""
+        if _use_real_chrome_cdp():
+            with _make_cdp_fetcher() as session:
+                self._batch_session = session
+                try:
+                    yield
+                finally:
+                    self._batch_session = None
+            return
+
         with _make_session() as session:
             self._batch_session = session
             try:
@@ -93,13 +112,22 @@ class HollandStayScraper(AbstractScraper):
             )
         else:
             # 独立调用（单测 / 非 dispatcher 路径）：按需自建会话
-            with _make_session() as session:
-                listings, complete = _scrape_city_pages(
-                    session,
-                    task.city_display,
-                    city_ids=[task.city_key],
-                    availability_ids=availability_ids,
-                )
+            if _use_real_chrome_cdp():
+                with _make_cdp_fetcher() as session:
+                    listings, complete = _scrape_city_pages(
+                        session,
+                        task.city_display,
+                        city_ids=[task.city_key],
+                        availability_ids=availability_ids,
+                    )
+            else:
+                with _make_session() as session:
+                    listings, complete = _scrape_city_pages(
+                        session,
+                        task.city_display,
+                        city_ids=[task.city_key],
+                        availability_ids=availability_ids,
+                    )
 
         for l in listings:
             l.source = self.source

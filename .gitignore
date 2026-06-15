@@ -5,3 +5,5 @@
 run.log
 
 *.json
+
+.pw-h2s-profile

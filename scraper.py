@@ -141,6 +141,9 @@ def _post_gql(session: req.Session, query: str) -> dict:
     HTTPError       其他 4xx/5xx
     Exception       网络超时、JSON 解析失败等
     """
+    if hasattr(session, "fetch_gql"):
+        return session.fetch_gql(query)
+
     total_wait = 0
     for attempt, wait in enumerate([0] + list(RATE_LIMIT_BACKOFF)):
         if wait:
