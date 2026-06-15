@@ -38,25 +38,34 @@ def _strip_leading_symbol(value: str) -> str:
 
 
 def _format_email_subject(text: str) -> str:
-    first_line = next((line.strip() for line in text.splitlines() if line.strip()), "FlatRadar notice")
+    first_line = next((line.strip() for line in text.splitlines() if line.strip()), "Notification")
     first_line = re.sub(r"\s+", " ", first_line)
     first_line = _strip_leading_symbol(first_line)
     if len(first_line) > 80:
         first_line = first_line[:77].rstrip() + "..."
-    return f"[FlatRadar] {first_line}"
+    return first_line
+
+
+def _linkify_html(text: str) -> str:
+    escaped = html_escape(text)
+    return re.sub(
+        r"(https?://[^\s<]+)",
+        r'<a href="\1" style="color:#0f6fff;text-decoration:none;word-break:break-all;">\1</a>',
+        escaped,
+    )
 
 
 def _format_email_html(text: str) -> str:
     raw_lines = text.splitlines()
     non_empty = [line.strip() for line in raw_lines if line.strip()]
-    title = _strip_leading_symbol(non_empty[0]) if non_empty else "FlatRadar notice"
+    title = _strip_leading_symbol(non_empty[0]) if non_empty else "Notification"
     safe_title = html_escape(title)
 
     paragraph_blocks: list[str] = []
     current: list[str] = []
     for line in raw_lines:
         if line.strip():
-            current.append(html_escape(line.strip()))
+            current.append(_linkify_html(line.strip()))
         elif current:
             paragraph_blocks.append("<br>".join(current))
             current = []
@@ -64,7 +73,7 @@ def _format_email_html(text: str) -> str:
         paragraph_blocks.append("<br>".join(current))
 
     body_html = "\n".join(
-        f'<p style="margin:0 0 14px;color:#374151;font-size:14px;line-height:1.7;">{block}</p>'
+        f'<p style="margin:0 0 16px;color:#243042;font-size:15px;line-height:1.8;">{block}</p>'
         for block in paragraph_blocks
     )
 
@@ -75,19 +84,26 @@ def _format_email_html(text: str) -> str:
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{safe_title}</title>
 </head>
-<body style="margin:0;padding:0;background:#f5f7fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:#1f2530;">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#f5f7fb;padding:32px 16px;">
+<body style="margin:0;padding:0;background:#e7edf4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;color:#102033;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:radial-gradient(circle at top left,#f8fbff 0%,#e7edf4 55%,#dde6ef 100%);padding:44px 16px;">
   <tr>
     <td align="center">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" style="max-width:560px;width:100%;background:#ffffff;border-radius:18px;box-shadow:0 8px 32px rgba(20,30,50,.08);overflow:hidden;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="640" style="max-width:640px;width:100%;background:#ffffff;border-radius:28px;box-shadow:0 24px 60px rgba(15,23,42,.12);overflow:hidden;">
         <tr>
-          <td style="padding:30px 34px 12px;">
-            <div style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#2f8cff;">FlatRadar</div>
-            <h1 style="margin:12px 0 8px;font-size:22px;font-weight:700;line-height:1.3;color:#111827;">{safe_title}</h1>
+          <td style="background:#102a43;padding:0;width:18px;"></td>
+          <td style="padding:32px 34px 12px;background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%);">
+            <h1 style="margin:0;font-size:30px;font-weight:700;line-height:1.15;letter-spacing:-0.03em;color:#102033;">{safe_title}</h1>
           </td>
         </tr>
         <tr>
-          <td style="padding:12px 34px 18px;">{body_html}</td>
+          <td style="background:#102a43;padding:0;width:18px;"></td>
+          <td style="padding:0 34px 0;">
+            <div style="height:1px;background:#d9e2ec;"></div>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#102a43;padding:0;width:18px;"></td>
+          <td style="padding:24px 34px 30px;">{body_html}</td>
         </tr>
       </table>
     </td>
