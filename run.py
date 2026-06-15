@@ -238,6 +238,8 @@ def run_once() -> int:
             if result.success:
                 updated_booked_listing_ids.add(_listing_book_key(listing))
                 _save_listing_id_set(booked_path, updated_booked_listing_ids)
+                logger.info("booking succeeded for %s; exiting run immediately to avoid extra H2S traffic", listing.name)
+                return 0
 
         return 0
     finally:
