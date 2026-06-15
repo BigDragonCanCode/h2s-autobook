@@ -88,6 +88,7 @@ def build_autobook_config() -> AutoBookConfig:
         listing_filter=ListingFilter(
             max_rent=_env_float("AUTO_BOOK_MAX_RENT", 1300),
             allowed_types=_env_list("AUTO_BOOK_ALLOWED_TYPES", ["Studio"]),
+            allowed_buildings=_env_list("AUTO_BOOK_ALLOWED_BUILDINGS", []),
             allowed_contract=_env_list("AUTO_BOOK_ALLOWED_CONTRACTS", ["Indefinite"]),
             available_from_start=os.environ.get("MONITOR_RANGE_START", "").strip(),
             available_from_end=os.environ.get("MONITOR_RANGE_END", "").strip(),
@@ -214,6 +215,13 @@ def run_once() -> int:
                 email_notifier.send_booking_success(
                     listing,
                     pay_url=result.pay_url,
+                    contract_start_date=result.contract_start_date,
+                    order_id=result.order_id,
+                )
+            elif email_notifier is not None:
+                email_notifier.send_booking_failed(
+                    listing,
+                    reason=result.message,
                     contract_start_date=result.contract_start_date,
                     order_id=result.order_id,
                 )

@@ -420,7 +420,8 @@ class ListingFilter:
     理由：无法核验时放行（fail-open）对自动预订是危险的——
     可能误触发价格未知或面积未知房源的自动预订。
 
-    字符串白名单字段（allowed_occupancy / allowed_types / allowed_neighborhoods）
+    字符串白名单字段（allowed_occupancy / allowed_types / allowed_neighborhoods /
+    allowed_buildings）
     本身已是 fail-closed：字段缺失时为空字符串，白名单匹配必然失败。
 
     注意
@@ -453,6 +454,13 @@ class ListingFilter:
     """
     片区白名单（子串匹配，大小写不敏感）。非空时只通知指定片区的房源。
     e.g. ["Strijp", "Centrum"]
+    """
+
+    allowed_buildings: list[str] = field(default_factory=list)
+    """
+    楼盘名白名单（子串匹配，大小写不敏感）。
+    非空时只通知 `listing.name` 中包含任一关键字的房源。
+    e.g. ["Docks", "Kastanjelaan"]
     """
 
     allowed_cities: list[str] = field(default_factory=list)
@@ -589,6 +597,14 @@ class ListingFilter:
         if self.allowed_neighborhoods:
             nbhd = fm.get("neighborhood", "")
             if not any(a.lower() in nbhd.lower() for a in self.allowed_neighborhoods):
+                return False
+
+        if self.allowed_buildings:
+            listing_name = listing.name or ""
+            if not any(
+                needle.lower() in listing_name.lower()
+                for needle in self.allowed_buildings
+            ):
                 return False
 
         if self.allowed_cities:

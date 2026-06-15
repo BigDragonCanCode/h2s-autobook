@@ -22,4 +22,10 @@ What is changed locally:
 - persistent `seen_filtered_listings.json` for digest dedupe
 - persistent `booked_success_listing_ids.json` to skip future re-attempts after a successful booking
 
+Autobook building-name filter:
+
+- Set `AUTO_BOOK_ALLOWED_BUILDINGS` in `.env` as a `|`-separated list of partial matches.
+- Matching is case-insensitive and checks `listing.name`.
+- Example: `AUTO_BOOK_ALLOWED_BUILDINGS=Kastanjelaan|Docks`
+
 For full source, license, and adaptation details, see [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
