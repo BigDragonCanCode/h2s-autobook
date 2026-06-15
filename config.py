@@ -110,7 +110,7 @@ def _filter_debug_enabled() -> bool:
 
 def _debug_filter_reject(listing_name: str, reason: str) -> None:
     if _filter_debug_enabled():
-        print(f"[FILTER REJECT] {listing_name}: {reason}")
+        logger.info("[FILTER REJECT] %s: %s", listing_name, reason)
 
 
 def resolve_project_path(path_str: str | os.PathLike[str]) -> Path:
