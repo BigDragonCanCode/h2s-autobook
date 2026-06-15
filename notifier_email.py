@@ -200,6 +200,48 @@ def format_booking_success(
     return "\n".join(lines)
 
 
+def format_booking_failed(
+    l: Listing,
+    *,
+    reason: str = "",
+    contract_start_date: str = "",
+    order_id: str = "",
+) -> str:
+    start = contract_start_date or l.contract_start_date or l.available_from or "?"
+    source = _source_short(getattr(l, "source", ""))
+    lines = [
+        f"[{source}] Booking Failed - Manual Action Required",
+        "",
+        l.name,
+        f"Order ID: {order_id or '-'}",
+        f"Basic rent: {l.basic_rent_display}/mo",
+        f"Total monthly cost: {l.price_display}/mo",
+        f"Move-in: {start}",
+    ]
+    if getattr(l, "allowance_price", None):
+        lines.append(f"Allowance: {l.allowance_price}")
+    lines.extend([
+        "",
+        "Booking failed automatically.",
+    ])
+    if reason:
+        lines.extend([
+            "",
+            "Failure reason:",
+            "",
+            reason,
+        ])
+    lines.extend([
+        "",
+        "Original listing:",
+        "",
+        l.url,
+        "",
+        "Please open the original listing link above and complete the booking manually.",
+    ])
+    return "\n".join(lines)
+
+
 class ResendEmailNotifier:
     ENDPOINT = "https://api.resend.com/emails"
 
@@ -277,6 +319,23 @@ class ResendEmailNotifier:
         order_id: str = "",
     ) -> bool:
         return self.send_text(format_booking_success(listing, pay_url, contract_start_date, order_id))
+
+    def send_booking_failed(
+        self,
+        listing: Listing,
+        *,
+        reason: str = "",
+        contract_start_date: str = "",
+        order_id: str = "",
+    ) -> bool:
+        return self.send_text(
+            format_booking_failed(
+                listing,
+                reason=reason,
+                contract_start_date=contract_start_date,
+                order_id=order_id,
+            )
+        )
 
     def close(self) -> None:
         self._session.close()
