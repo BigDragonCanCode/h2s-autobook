@@ -46,6 +46,15 @@ def _env_list(name: str, default: list[str]) -> list[str]:
     return [part.strip() for part in raw.split("|") if part.strip()]
 
 
+def _env_offer_list(name: str, default: list[str]) -> list[str]:
+    raw = os.environ.get(name)
+    if raw is None:
+        return list(default)
+    if raw == "":
+        return [""]
+    return [part.strip() for part in raw.split("|") if part.strip()]
+
+
 def _env_float(name: str, default: float | None) -> float | None:
     raw = os.environ.get(name)
     if raw is None or not raw.strip():
@@ -89,7 +98,8 @@ def build_autobook_config() -> AutoBookConfig:
             max_rent=_env_float("AUTO_BOOK_MAX_RENT", 1300),
             allowed_types=_env_list("AUTO_BOOK_ALLOWED_TYPES", ["Studio"]),
             allowed_buildings=_env_list("AUTO_BOOK_ALLOWED_BUILDINGS", []),
-            allowed_contract=_env_list("AUTO_BOOK_ALLOWED_CONTRACTS", ["Indefinite"]),
+            allowed_offer=_env_offer_list("AUTO_BOOK_ALLOWED_OFFER", [""]),
+            allowed_contract=_env_list("AUTO_BOOK_ALLOWED_CONTRACTS", []),
             available_from_start=os.environ.get("MONITOR_RANGE_START", "").strip(),
             available_from_end=os.environ.get("MONITOR_RANGE_END", "").strip(),
         ),

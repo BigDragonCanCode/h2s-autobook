@@ -486,8 +486,8 @@ class ListingFilter:
 
     allowed_contract: list[str] = field(default_factory=list)
     """
-    合同类型白名单（子串匹配，大小写不敏感）。非空时只通知匹配的房源。
-    e.g. ["6 months max"] 只推送短租；["Indefinite"] 只推送长租。
+    合同类型白名单（已废弃，保留兼容旧数据）。
+    H2S 新接口更可靠的短/长租区分请改用 `allowed_offer`。
     """
 
     allowed_tenant: list[str] = field(default_factory=list)
@@ -498,8 +498,10 @@ class ListingFilter:
 
     allowed_offer: list[str] = field(default_factory=list)
     """
-    促销/标签白名单（子串匹配，大小写不敏感）。非空时只通知匹配的房源。
-    e.g. ["Short-stay"] / ["Parking included"]。
+    促销/标签白名单（子串匹配，大小写不敏感）。
+    非空时只通知匹配的房源。对 H2S 来说，`offer_text_two="Short-stay"` 表示短租；
+    空字符串表示长租/Indefinite。若列表中包含空字符串 `""`，则仅匹配“无 offer”的长租。
+    e.g. ["Short-stay"] / ["Parking included"] / [""]。
     """
 
     allowed_finishing: list[str] = field(default_factory=list)
@@ -668,7 +670,11 @@ class ListingFilter:
 
         if self.allowed_offer:
             offer = fm.get("offer", "")
-            if not any(a.lower() in offer.lower() for a in self.allowed_offer):
+            if not any(
+                (a == "" and offer.strip() == "")
+                or (a != "" and a.lower() in offer.lower())
+                for a in self.allowed_offer
+            ):
                 _debug_filter_reject(listing.name, f"offer {offer!r} not in {self.allowed_offer!r}")
                 return False
 

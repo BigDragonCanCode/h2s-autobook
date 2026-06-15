@@ -28,6 +28,13 @@ Autobook building-name filter:
 - Matching is case-insensitive and checks `listing.name`.
 - Example: `AUTO_BOOK_ALLOWED_BUILDINGS=Kastanjelaan|Docks`
 
+Autobook offer filter:
+
+- Use `AUTO_BOOK_ALLOWED_OFFER` instead of the old contract env for H2S short/long-stay filtering.
+- `AUTO_BOOK_ALLOWED_OFFER=Short-stay` means short-stay only.
+- `AUTO_BOOK_ALLOWED_OFFER=` means long-stay only (no `offer_text_two` value).
+- `AUTO_BOOK_ALLOWED_CONTRACTS` is kept only for backward compatibility with older data and should be considered deprecated.
+
 Real Chrome CDP mode for H2S:
 
 - Set `H2S_USE_REAL_CHROME_CDP=true` in `.env` to make the H2S scraper run GraphQL requests inside a manually verified real Chrome session instead of direct `curl_cffi`.

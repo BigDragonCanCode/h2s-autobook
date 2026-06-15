@@ -31,7 +31,7 @@ LISTING_KEY_MAP: dict[str, str] = {
     "Neighborhood": "neighborhood", # 片区，e.g. "Strijp-S"
     "Building":     "building",     # 楼盘名，e.g. "The Docks"
     "Offer":        "offer",        # 短租标签，e.g. "Short-stay"
-    "Contract":     "contract",     # 合同类型，e.g. "Indefinite" / "6 months max"
+    "Contract":     "contract",     # 已废弃：H2S 新接口通常不再稳定提供该展示字段，保留兼容旧数据
     "Tenant":       "tenant",       # 租客要求，e.g. "student only" / "employed only"
     "Address":      "address",      # 街道地址，供 geocode pipeline 用，e.g. "Wenckebachweg 51, 1096 AN Amsterdam"
 }

@@ -400,13 +400,11 @@ def _to_listing(item: dict, city_name: str) -> Optional[Listing]:
             if v:
                 suffix = " m²" if key == "living_area" else ""
                 features.append(f"{prefix}: {v}{suffix}")
-        # 合同类型 / 短租标签
-        offer = attrs.get("offer_text_two", "")
-        if offer and offer.strip():
-            features.append(f"Offer: {offer.strip()}")
-        toc = attrs.get("type_of_contract")
-        if isinstance(toc, list) and toc:
-            features.append(f"Contract: {toc[0]['label']}")
+        # 合同展示字段在 H2S 新接口里不再稳定返回；这里仅保留 offer_text_two。
+        # offer_text_two = "Short-stay" 表示短租；为空表示长租/Indefinite。
+        offer = (attrs.get("offer_text_two", "") or "").strip()
+        if offer:
+            features.append(f"Offer: {offer}")
         tp = attrs.get("tenant_profile")
         if isinstance(tp, list) and tp:
             features.append(f"Tenant: {tp[0]['label']}")
