@@ -8,6 +8,20 @@ from dotenv import load_dotenv
 
 from config import ENV_PATH, load_config
 from run import run_once, setup_logging
+from scrapers.base import BlockedError, RateLimitError, ScrapeNetworkError, UpstreamMaintenanceError
+
+
+_BLOCKED_COOLDOWN_SECONDS = 15 * 60
+_MAINTENANCE_COOLDOWN_SECONDS = 15 * 60
+_NETWORK_COOLDOWN_SECONDS = 2 * 60
+_CHALLENGE_RETRY_SECONDS = 30
+
+
+def _blocked_cooldown_seconds(exc: BlockedError) -> int:
+    text = str(exc).lower()
+    if "challenge page" in text or "just a moment" in text or "verify you are human" in text:
+        return _CHALLENGE_RETRY_SECONDS
+    return _BLOCKED_COOLDOWN_SECONDS
 
 
 def _sleep_interval() -> int:
@@ -41,6 +55,36 @@ def main() -> int:
         except KeyboardInterrupt:
             logger.info("monitor stopped by user")
             return 0
+        except BlockedError as e:
+            cooldown_seconds = _blocked_cooldown_seconds(e)
+            logger.warning(
+                "monitor hit Cloudflare/session block: %s; cooling down for %s seconds",
+                e,
+                cooldown_seconds,
+            )
+            time.sleep(cooldown_seconds)
+        except UpstreamMaintenanceError as e:
+            logger.info(
+                "upstream maintenance detected: %s; cooling down for %s seconds",
+                e,
+                _MAINTENANCE_COOLDOWN_SECONDS,
+            )
+            time.sleep(_MAINTENANCE_COOLDOWN_SECONDS)
+        except RateLimitError as e:
+            sleep_seconds = _sleep_interval()
+            logger.warning(
+                "monitor hit rate limit: %s; sleeping %s seconds before retry",
+                e,
+                sleep_seconds,
+            )
+            time.sleep(sleep_seconds)
+        except ScrapeNetworkError as e:
+            logger.warning(
+                "monitor hit scrape network error: %s; sleeping %s seconds before retry",
+                e,
+                _NETWORK_COOLDOWN_SECONDS,
+            )
+            time.sleep(_NETWORK_COOLDOWN_SECONDS)
         except Exception:
             logger.exception("monitor cycle crashed; retrying in 10 seconds")
             time.sleep(10)

@@ -26,6 +26,7 @@ import curl_cffi.requests as req
 from cdp_browser_fetcher import CdpBrowserFetcher
 from config import get_impersonate, get_proxy_url
 from models import Listing
+from seleniumbase_cdp_fetcher import SeleniumBaseCdpFetcher
 
 from .base import (
     AbstractScraper,
@@ -40,6 +41,9 @@ logger = logging.getLogger(__name__)
 def _use_real_chrome_cdp() -> bool:
     return (os.environ.get("H2S_USE_REAL_CHROME_CDP", "").strip().lower() == "true")
 
+def _use_seleniumbase_cdp() -> bool:
+    return (os.environ.get("H2S_USE_SELENIUMBASE_CDP", "").strip().lower() == "true")
+
 
 def _make_session() -> req.Session:
     """新建一个 curl_cffi Session（固定一个 TLS 指纹 + 代理）。"""
@@ -47,8 +51,9 @@ def _make_session() -> req.Session:
     proxies = {"https": proxy, "http": proxy} if proxy else {}
     return req.Session(impersonate=get_impersonate(), proxies=proxies)
 
-
-def _make_cdp_fetcher() -> CdpBrowserFetcher:
+def _make_browser_fetcher():
+    if _use_seleniumbase_cdp():
+        return SeleniumBaseCdpFetcher()
     return CdpBrowserFetcher(debug_url=os.environ.get("H2S_CDP_URL", "http://127.0.0.1:9222"))
 
 
@@ -74,13 +79,13 @@ class HollandStayScraper(AbstractScraper):
 
     def __init__(self) -> None:
         # 批次作用域内的共享 Session；None 表示当前不在批次中。
-        self._batch_session: req.Session | CdpBrowserFetcher | None = None
+        self._batch_session: req.Session | CdpBrowserFetcher | SeleniumBaseCdpFetcher | None = None
 
     @contextmanager
     def batch_session(self):
         """整批一个 Session + 一个固定 TLS 指纹（见类 docstring）。"""
-        if _use_real_chrome_cdp():
-            with _make_cdp_fetcher() as session:
+        if _use_real_chrome_cdp() or _use_seleniumbase_cdp():
+            with _make_browser_fetcher() as session:
                 self._batch_session = session
                 try:
                     yield
@@ -112,8 +117,8 @@ class HollandStayScraper(AbstractScraper):
             )
         else:
             # 独立调用（单测 / 非 dispatcher 路径）：按需自建会话
-            if _use_real_chrome_cdp():
-                with _make_cdp_fetcher() as session:
+            if _use_real_chrome_cdp() or _use_seleniumbase_cdp():
+                with _make_browser_fetcher() as session:
                     listings, complete = _scrape_city_pages(
                         session,
                         task.city_display,
